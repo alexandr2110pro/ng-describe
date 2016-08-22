@@ -1,4 +1,4 @@
-# ng-describe v1.1.1
+# ng-describe
 
 > Convenient BDD specs for Angular
 
@@ -6,17 +6,22 @@
 [![Quality][quality-badge] ][quality-url]
 
 [![Build status][ng-describe-ci-image] ][ng-describe-ci-url]
-[![Coverage Status][ng-describe-coverage-image] ][ng-describe-coverage-url]
+[![manpm](https://img.shields.io/badge/manpm-%E2%9C%93-3399ff.svg)](https://github.com/bahmutov/manpm)
 [![Codacy Badge][ng-describe-codacy-image] ][ng-describe-codacy-url]
+[![semantic-release][semantic-image] ][semantic-url]
+
+[![Coverage Status][ng-describe-coverage-image] ][ng-describe-coverage-url]
 [![dependencies][ng-describe-dependencies-image] ][ng-describe-dependencies-url]
 [![devdependencies][ng-describe-devdependencies-image] ][ng-describe-devdependencies-url]
 
-Tested against angular v1.2, v1.3 and v1.4
+Tested against angular v1.2, v1.3 and v1.4,
+dependent projects tested using [dont-break][dont-break] - [![Circle CI] [circle-icon] ][circle-url].
 
-Dependent projects tested using [dont-break][dont-break] - [![Circle CI] [circle-icon] ][circle-url]
+Read [Unit testing AngularJS using ng-describe](http://glebbahmutov.com/blog/1-2-3-tested/) tutorial,
+look through [Unit testing](http://slides.com/bahmutov/ng-describe) slides.
 
 Join [Kensho](https://kensho.com/#/careers) and change the way financial industry analyzes information.
-We love the open source and use the bleeding edge technology stack.
+We love open source and use the bleeding edge technology stack.
 
 [ng-describe-icon]: https://nodei.co/npm/ng-describe.png?downloads=true
 [ng-describe-url]: https://npmjs.org/package/ng-describe
@@ -30,6 +35,8 @@ We love the open source and use the bleeding edge technology stack.
 [ng-describe-devdependencies-url]: https://david-dm.org/kensho/ng-describe#info=devDependencies
 [ng-describe-codacy-image]: https://www.codacy.com/project/badge/25cb5d1410c7497cb057d887d1f3ea23
 [ng-describe-codacy-url]: https://www.codacy.com/public/kensho/ng-describe.git
+[semantic-image]: https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg
+[semantic-url]: https://github.com/semantic-release/semantic-release
 
 [quality-badge]: http://npm.packagequality.com/badge/ng-describe.png
 [quality-url]: http://packagequality.com/#?package=ng-describe
@@ -63,10 +70,14 @@ We love the open source and use the bleeding edge technology stack.
   * [Spying](#spying)
     * [Spy on injected methods](#spy-on-injected-methods)
     * [Spy on injected function](#spy-on-injected-function)
+    * [Spy on 3rd party service injected some place else](#spy-on-3rd-party-service-injected-some-place-else)
     * [Spy on mocked service](#spy-on-mocked-service)
   * [Configure module](#configure-module)
   * [Helpful failure messages](#helpful-failure-messages)
 * [Development](#development)
+  * [Updating dependencies](#updating-dependencies)
+* [Note to Jasmine users](#note-to-jasmine-users)
+* [Modules used](#modules-used)
 * [License](#license)
 
 
@@ -75,47 +86,44 @@ We love the open source and use the bleeding edge technology stack.
 Unit testing and mocking AngularJs requires a lot of boilerplate code:
 ```js
 describe('typical test', function () {
-    var $rootScope, foo;
+    var foo;
     beforeEach(function () {
         angular.mock.module('A');
         // other modules
     });
-    beforeEach(inject(function (_$rootScope_, _foo_) {
-        $rootScope = _$rootScope_;
+    beforeEach(inject(function (_foo_) {
         foo = _foo_;
     }));
     it('finally a test', function () {
-        $rootScope.$apply(); // for example
         expect(foo).toEqual('bar');
     });
 });
 ```
 
-ng-describe makes testing simple modules a breeze. 
+ng-describe makes testing simple modules a breeze.
 Just list which modules you would like to load, which values / services / etc.
 you would like to inject and then start testing. Same test as above using ng-describe
 is much shorter and clearer:
 ```js
 ngDescribe({
     modules: 'A',
-    inject: ['$rootScope', 'foo'],
-    tests: function (deps) {
+    tests: function (foo) {
         it('finally a test', function () {
-            deps.$rootScope.$apply();
-            expect(deps.foo).toEqual('bar');
+            expect(foo).toEqual('bar');
         });
-    });
+    }
 });
 ```
 ng-describe can inject dependencies, mock modules, set configs, create controllers, scopes, and
-even html fragments. For more details, continue reading.
+even html fragments. For more details, continue reading. We also showed this library at AngularJS NYC
+meetup, the slides are at [slides.com/bahmutov/ng-describe](http://slides.com/bahmutov/ng-describe).
 
 
 ## Install
 
 `npm install ng-describe --save-dev`
 
-Load ng-describe.js after angular and angular-mocks but before your specs, for example in Karma conf file
+Load ng-describe.js after angular and angular-mocks but before your specs, for example in Karma conf file.
 
 ```js 
 // karma.conf.js
@@ -172,7 +180,7 @@ ngDescribe({
 });
 ```
 
-You if have a single module to inject, you can just use a string name without Array notation
+If you have a single module to inject, you can just use a string name without Array notation
 
 ```js
 ngDescribe({
@@ -202,7 +210,7 @@ ngDescribe({
 });
 ```
 
-**tests** - callback function that contains actual specs. This of this as `describe` equivalent with
+**tests** - callback function that contains actual specs. Think of this as equivalent to `describe` with
 all necessary Angular dependencies taken care of.
 
 ```js
@@ -223,7 +231,31 @@ ngDescribe({
 });
 ```
 
-**mocks** - top level mocks to be substituted into the tests. 
+**Dependencies injection shortcut**
+
+You can list the dependencies to be injected directly in the test callback.
+
+```js
+angular.module('shortcut', [])
+  .constant('foo', 'bar');
+ngDescribe({
+  module: 'shortcut',
+  tests: function (foo) {
+    it('has constant', function () {
+      console.assert(foo === 'bar');
+    });
+  }
+});
+```
+
+You can inject multiple providers, including built-in services. If the test callback argument
+is named `deps` or `dependencies` it will be assumed that you do NOT use the shortcut.
+
+The shortcut was implemented using [changing named parameters trick][trick].
+
+[trick]: http://glebbahmutov.com/blog/changing-the-function-arguments-trick/
+
+**mocks** - top level mocks to be substituted into the tests.
 The mocks override *any* injected dependencies among modules.
 
 ```js
@@ -245,7 +277,7 @@ ngDescribe({
 
 For more information see examples below.
 
-**controllers** - list of controllers by name that be injected. Each controller
+**controllers** - list of controllers by name that should be injected. Each controller
 is created with a new `$rootScope` instance.
 
 **NOTE: For each created controller, its SCOPE instance will be in the dependencies object.**
@@ -276,7 +308,7 @@ ngDescribe({
 });
 ```
 
-The compiled `angular.element` will be injected into dependencies object under `element` property.
+The compiled `angular.element` will be injected into the dependencies object under `element` property.
 See examples below for more information. The compilation will create a new scope object too.
 
 **parentScope** - when creating HTML fragment, copies properties from this object into the
@@ -302,8 +334,8 @@ ngDescribe({
 See "2 way binding" example below.
 
 **configs** - object with modules that have provider that can be used to inject
-run time settings. 
-See *Update 1* in 
+run time settings.
+See *Update 1* in
 [Inject valid constants into Angular](http://glebbahmutov.com/blog/inject-valid-constants-into-angular/)
 blog post and examples below.
 
@@ -311,7 +343,7 @@ blog post and examples below.
 
 **verbose** - flag to print debug messages during execution
 
-**only** - flag to run this set of tests and skip the rest. Equivalent to 
+**only** - flag to run this set of tests and skip the rest. Equivalent to
 [ddescribe or describe.only](http://glebbahmutov.com/blog/focus-on-karma-test/).
 
 ```js
@@ -324,7 +356,17 @@ ngDescribe({
 **skip** - flag to skip this group of specs. Equivalent to `xdescribe` or `describe.skip`.
 Could be a string message explaining the reason for skipping the spec.
 
-**exposeApi** - instead of creating element right away, expose element factory so that you can create
+**exposeApi** - expose low-level ngDescribe methods
+
+The `tests` callback will get the second argument, which is an object with the following methods
+
+    {
+      setupElement: function (elementHtml),
+      setupControllers: function (controllerNames)
+    }
+
+You can use `setupElement` to control when to create the element.
+For example, instead of creating element right away, expose element factory so that you can create
 an element *after* running a `beforeEach` block. Useful for setting up mock backend before creating
 an element.
 
@@ -349,10 +391,48 @@ ngDescribe({
 });
 ```
 
-**http** - shortcut for specifying mock HTTP responses, 
+See the spec in [test/expose-spec.js](test/expose-spec.js)
+
+Or you can use `setupControllers` to create controller objects AFTER setting up your spies.
+
+```js
+angular.module('BroadcastController', [])
+  .controller('broadcastController', function broadcastController($rootScope) {
+    $rootScope.$broadcast('foo');
+  });
+```
+
+We need to listen for the `foo` broadcast inside a unit test before creating the controller.
+If we let `ngDescribe` create the "broadcastController" it will be too late. Instead we
+can tell the `ngDescribe` to expose the low-level api and then we create the controllers when
+we are ready
+
+```js
+ngDescribe({
+  name: 'spy on controller init',
+  modules: 'BroadcastController',
+  inject: '$rootScope',
+  exposeApi: true,
+  tests: function (deps, describeApi) {
+    it('can catch the broadcast in controller init', function (done) {
+      var heardFoo;
+      deps.$rootScope.$on('foo', function () {
+        heardFoo = true;
+        done();
+      });
+      describeApi.setupControllers('broadcastController');
+    });
+  }
+});
+```
+
+See the spec in [test/controller-init-spec.js](test/controller-init-spec.js)
+
+**http** - shortcut for specifying mock HTTP responses,
 built on top of [$httpBackend](https://docs.angularjs.org/api/ngMock/service/$httpBackend).
 Each GET request will be mapped to `$httpBackend.whenGET` for example. You can provide
-data, response code + data pair or custom function to return something using custom logic.
+data, response code + data pair, response code + data + headers and optionally statusText
+or custom function to return something using custom logic.
 If you use `http` property, then the injected dependencies will have `http` object that
 you can flush (it is really `$httpBackend` object).
 
@@ -366,8 +446,9 @@ ngDescribe({
       '/my/smart/url': function (method, url, data, headers) {
         return [500, 'something is wrong'];
       } // status 500, data "something is wrong"
-    }, 
+    },
     post: {
+      '/my/url': '/my/url': [201, {message: 'ok'}, {Location: '/new/url'}, 'this is the new response'], // status data, headers and statusText
       // same format as GET
     }
   },
@@ -375,18 +456,19 @@ ngDescribe({
     it('responds', function (done) {
       deps.$http.get('/my/other/url')
         .then(function (response) {
+          // expect
           // response.status = 202
           // response.data = 42
           done();
         });
-      http.flush();
+      deps.http.flush();
     });
   }
 });
 ```
 All standard methods should be supported (`get`, `head`, `post`, `put`, `delete`, `jsonp` and `patch`).
 
-Each of the methods can return a function that returns an configuration object, see [mock http](#mock-http)
+Each of the methods can return a function that returns an configuration object, see [mock http](#mock-http).
 
 **step** - shortcut for running the digest cycle and mock http flush
 
@@ -415,10 +497,45 @@ tests: function (deps) {
 }
 ```
 
+Also flushed the `$timeout` service
+
+```js
+ngDescribe({
+  inject: '$timeout',
+  tests: function (deps) {
+    it(function () {
+      deps.$timeout(...)
+      deps.step();
+      // same as deps.$timeout.flush()
+    })
+  }
+})
+```
+
+**root** - alternative context for BDD callbacks
+
+Imagine we are loading Angular and ngDescribe in a synthetic browser environment (like 
+[jsdom](https://www.npmjs.com/package/jsdom)). ngDescribe attaches itself to synthetic `window`
+object, but the test framework callbacks are attached to `global` object, not `window`.
+By passing an alternative object, we allow ngDescribe to discover `it`, `beforeEach`, etc.
+
+```js
+// load ngDescribe in jsdom under Node
+window.ngDescribe({
+  root: global,
+  tests: function (deps) {
+    ...
+  }
+})
+```
+
+See repo [ng-describe-jsdom](https://gitlab.com/bahmutov/ng-describe-jsdom) for actual
+example that tests Angular without a browser, only a synthetic emulation.
+
 
 ## Examples
 
-Some examples use Jasmine matchers, others use `la` assertion from
+Most examples use use the `la` assertion from the
 [lazy-ass](https://github.com/bahmutov/lazy-ass) library and *done* callback argument
 from [Mocha](http://visionmedia.github.io/mocha/) testing framework.
 
@@ -459,7 +576,7 @@ ngDescribe({
   tests: function (deps) {
     // deps object has every injected dependency as a property
     it('has correct value foo', function () {
-      expect(deps.foo).toEqual('bar');
+      la(deps.foo === 'bar');
     });
   }
 });
@@ -501,11 +618,11 @@ ngDescribe({
   inject: 'addFoo',
   tests: function (deps) {
     it('is a function', function () {
-      expect(typeof deps.addFoo).toEqual('function');
+      la(typeof deps.addFoo === 'function');
     });
     it('appends value of foo to any string', function () {
       var result = deps.addFoo('x');
-      expect(result).toEqual('xbar');
+      la(result === 'xbar');
     });
   }
 });
@@ -576,8 +693,8 @@ ngDescribe({
 
 ### Test controllerAs syntax
 
-If you use `controllerAs` syntax without any components (see [Binding to ...][binding] post),
-then you can still test it quickly
+If you use `controllerAs` syntax without any components (see [Binding to ...][binding] post or
+[Separate ...][separate]), then you can still test it quickly
 
 ```js
 angular.module('H', [])
@@ -606,6 +723,7 @@ angular.module('H', [])
 ```
 
 [binding]: http://blog.thoughtram.io/angularjs/2015/01/02/exploring-angular-1.3-bindToController.html
+[separate]: http://glebbahmutov.com/blog/separate-model-from-view-in-angular/
 
 ### Test controller instance in custom directive
 
@@ -796,7 +914,7 @@ ngDescribe({
 });
 ```
 
-Remember when macking mocks, it is always `module name : provider name : mocked property name`
+Remember when making mocks, it is always `module name : provider name : mocked property name`
 
 ```js
 mocks: {
@@ -825,6 +943,33 @@ ngDescribe({
   tests: function (deps) {
     it('has correct constant foo', function () {
       expect(deps.foo).toEqual(42);
+    });
+  }
+});
+```
+
+You can even mock part of the module itself and use mock value in other parts via injection
+
+```js
+angular.module('LargeModule', [])
+  .constant('foo', 'foo')
+  .service('getFoo', function (foo) {
+    return function getFoo() {
+      return foo;
+    };
+  });
+ngDescribe({
+  name: 'mocking part of the module itself',
+  modules: 'LargeModule',
+  inject: 'getFoo',
+  mock: {
+    LargeModule: {
+      foo: 'bar'
+    }
+  },
+  tests: function (deps) {
+    it('service injects mock value', function () {
+      la(deps.getFoo() === 'bar', 'returns mock value');
     });
   }
 });
@@ -887,8 +1032,8 @@ is placed into the `data` property, as I show here.
 
 #### Mock http responses
 
-You can use a shortcut to define mock HTTP responses via `$httpBackend` module. For example, 
-you can define static responses
+You can use a shortcut to define mock HTTP responses via `$httpBackend` module. For example,
+you can define static responses.
 
 ```js
 ngDescribe({
@@ -906,9 +1051,9 @@ ngDescribe({
   }
 });
 ```
-All HTTP methods are supported (`get`, `post`, `delete`, `put`, etc.)
+All HTTP methods are supported (`get`, `post`, `delete`, `put`, etc.).
 
-You can also get a function that would return a config object
+You can also get a function that would return a config object.
 
 ```js
 var mockGetApi = {
@@ -1062,6 +1207,72 @@ ngDescribe({
 });
 ```
 
+#### Spy on 3rd party service injected some place else
+
+Let us say you need to verify that the `$interval` service injected in the module under test
+was called. It is a little verbose to verify from the unit test. We must mock the `$interval`
+with our function and then call the actual `$interval` from the module `ng` to provide the
+same functionality.
+
+Source code we are trying to unit test
+
+```js
+angular.module('IntervalExample', [])
+  .service('numbers', function ($interval, $rootScope) {
+    return function emitNumbers(delay, n) {
+      var k = 0;
+      $interval(function () {
+        $rootScope.$emit('number', k);
+        k += 1;
+      }, 100, n);
+    };
+  });
+```
+
+In the unit test we will mock `$interval` service for module `IntervalExample`
+
+```js
+// unit test start
+var intervalCalled;
+ngDescribe({
+  name: 'spying on $interval',
+  module: 'IntervalExample',
+  inject: ['numbers', '$rootScope'],
+  verbose: false,
+  only: false,
+  mocks: {
+    IntervalExample: {
+      $interval: function mockInterval(fn, delay, n) {
+        var injector = angular.injector(['ng']);
+        var $interval = injector.get('$interval');
+        intervalCalled = true;
+        return $interval(fn, delay, n);
+      }
+    }
+  },
+  tests: function (deps) {
+    // unit test goes here
+  }
+});
+```
+
+A unit test just calls the `numbers` function and then checks the variable `intervalCalled`
+
+```js
+it('emits 3 numbers', function (done) {
+  deps.$rootScope.$on('number', function (event, k) {
+    if (k === 2) {
+      done();
+    }
+  });
+  // emit 3 numbers with 100ms interval
+  deps.numbers(100, 3);
+  la(intervalCalled, 'the $interval was called somewhere');
+});
+```
+
+You can see the unit test in file [test/spying-on-interval-spec.js](test/spying-on-interval-spec.js).
+
 #### Spy on mocked service
 
 If we mock an injected service, we can still spy on it, just like as if we were spying on the
@@ -1202,6 +1413,47 @@ To keep a watch and rerun build + lint + tests on source file change
 
 For now, all source is in a single `ng-describe.js` file, while the documentation
 is generated from Markdown files in the `docs` folder
+
+To just run karma unit tests via Grunt plugin
+
+    npm run karma
+
+If you have Karma runner installed globally you can run all the unit tests yourself ones
+
+    karma start --single-run=true test/karma.conf.js
+
+### Updating dependencies
+
+This project uses a lot of 3rd party dependencies that constantly get out of date.
+To reliably update dependencies to the latest working versions, we use
+[next-update](https://github.com/bahmutov/next-update). There is already a script command
+
+    npm run update-dependencies
+
+You can upgrade a particular dependency by adding "-m <name>", for example
+
+    npm run update-dependencies -- -m jscs
+
+If you use [npm-quick-run](https://github.com/bahmutov/npm-quick-run) you can use shorthand
+
+    nr u -m jscs
+
+
+## Note to Jasmine users
+
+We got very tired of fighting bugs in the [Jasmine](http://jasmine.github.io/) test framework.
+From the broken order of `afterEach` callbacks to the `afterAll` not firing at all - the work arounds
+we had to write quickly becamse insane. Thus we 
+[recommend Mocha](https://glebbahmutov.com/blog/picking-javascript-testing-framework/) testing
+framework - fast, simple and seems to not suffer from any bugs. You do need your own assertion
+framework, we use [lazy-ass](https://github.com/bahmutov/lazy-ass) and a library
+of predicates [check-more-types](https://github.com/kensho/check-more-types).
+
+
+
+## Modules used
+* [check-more-types](https://github.com/kensho/check-more-types) - Large collection of predicates.
+* [lazy-ass](https://github.com/bahmutov/lazy-ass) - Lazy assertions without performance penalty
 
 
 ## License

@@ -1,6 +1,6 @@
 # Examples
 
-Some examples use Jasmine matchers, others use `la` assertion from
+Most examples use use the `la` assertion from the
 [lazy-ass](https://github.com/bahmutov/lazy-ass) library and *done* callback argument
 from [Mocha](http://visionmedia.github.io/mocha/) testing framework.
 
@@ -41,7 +41,7 @@ ngDescribe({
   tests: function (deps) {
     // deps object has every injected dependency as a property
     it('has correct value foo', function () {
-      expect(deps.foo).toEqual('bar');
+      la(deps.foo === 'bar');
     });
   }
 });
@@ -83,11 +83,11 @@ ngDescribe({
   inject: 'addFoo',
   tests: function (deps) {
     it('is a function', function () {
-      expect(typeof deps.addFoo).toEqual('function');
+      la(typeof deps.addFoo === 'function');
     });
     it('appends value of foo to any string', function () {
       var result = deps.addFoo('x');
-      expect(result).toEqual('xbar');
+      la(result === 'xbar');
     });
   }
 });
@@ -158,8 +158,8 @@ ngDescribe({
 
 ## Test controllerAs syntax
 
-If you use `controllerAs` syntax without any components (see [Binding to ...][binding] post),
-then you can still test it quickly
+If you use `controllerAs` syntax without any components (see [Binding to ...][binding] post or
+[Separate ...][separate]), then you can still test it quickly
 
 ```js
 angular.module('H', [])
@@ -188,6 +188,7 @@ angular.module('H', [])
 ```
 
 [binding]: http://blog.thoughtram.io/angularjs/2015/01/02/exploring-angular-1.3-bindToController.html
+[separate]: http://glebbahmutov.com/blog/separate-model-from-view-in-angular/
 
 ## Test controller instance in custom directive
 
@@ -378,7 +379,7 @@ ngDescribe({
 });
 ```
 
-Remember when macking mocks, it is always `module name : provider name : mocked property name`
+Remember when making mocks, it is always `module name : provider name : mocked property name`
 
 ```js
 mocks: {
@@ -407,6 +408,33 @@ ngDescribe({
   tests: function (deps) {
     it('has correct constant foo', function () {
       expect(deps.foo).toEqual(42);
+    });
+  }
+});
+```
+
+You can even mock part of the module itself and use mock value in other parts via injection
+
+```js
+angular.module('LargeModule', [])
+  .constant('foo', 'foo')
+  .service('getFoo', function (foo) {
+    return function getFoo() {
+      return foo;
+    };
+  });
+ngDescribe({
+  name: 'mocking part of the module itself',
+  modules: 'LargeModule',
+  inject: 'getFoo',
+  mock: {
+    LargeModule: {
+      foo: 'bar'
+    }
+  },
+  tests: function (deps) {
+    it('service injects mock value', function () {
+      la(deps.getFoo() === 'bar', 'returns mock value');
     });
   }
 });
@@ -469,8 +497,8 @@ is placed into the `data` property, as I show here.
 
 ### Mock http responses
 
-You can use a shortcut to define mock HTTP responses via `$httpBackend` module. For example, 
-you can define static responses
+You can use a shortcut to define mock HTTP responses via `$httpBackend` module. For example,
+you can define static responses.
 
 ```js
 ngDescribe({
@@ -488,9 +516,9 @@ ngDescribe({
   }
 });
 ```
-All HTTP methods are supported (`get`, `post`, `delete`, `put`, etc.)
+All HTTP methods are supported (`get`, `post`, `delete`, `put`, etc.).
 
-You can also get a function that would return a config object
+You can also get a function that would return a config object.
 
 ```js
 var mockGetApi = {
@@ -643,6 +671,72 @@ ngDescribe({
   }
 });
 ```
+
+### Spy on 3rd party service injected some place else
+
+Let us say you need to verify that the `$interval` service injected in the module under test
+was called. It is a little verbose to verify from the unit test. We must mock the `$interval`
+with our function and then call the actual `$interval` from the module `ng` to provide the
+same functionality.
+
+Source code we are trying to unit test
+
+```js
+angular.module('IntervalExample', [])
+  .service('numbers', function ($interval, $rootScope) {
+    return function emitNumbers(delay, n) {
+      var k = 0;
+      $interval(function () {
+        $rootScope.$emit('number', k);
+        k += 1;
+      }, 100, n);
+    };
+  });
+```
+
+In the unit test we will mock `$interval` service for module `IntervalExample`
+
+```js
+// unit test start
+var intervalCalled;
+ngDescribe({
+  name: 'spying on $interval',
+  module: 'IntervalExample',
+  inject: ['numbers', '$rootScope'],
+  verbose: false,
+  only: false,
+  mocks: {
+    IntervalExample: {
+      $interval: function mockInterval(fn, delay, n) {
+        var injector = angular.injector(['ng']);
+        var $interval = injector.get('$interval');
+        intervalCalled = true;
+        return $interval(fn, delay, n);
+      }
+    }
+  },
+  tests: function (deps) {
+    // unit test goes here
+  }
+});
+```
+
+A unit test just calls the `numbers` function and then checks the variable `intervalCalled`
+
+```js
+it('emits 3 numbers', function (done) {
+  deps.$rootScope.$on('number', function (event, k) {
+    if (k === 2) {
+      done();
+    }
+  });
+  // emit 3 numbers with 100ms interval
+  deps.numbers(100, 3);
+  la(intervalCalled, 'the $interval was called somewhere');
+});
+```
+
+You can see the unit test in file [test/spying-on-interval-spec.js](test/spying-on-interval-spec.js).
 
 ### Spy on mocked service
 

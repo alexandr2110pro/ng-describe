@@ -1,7 +1,7 @@
 {
   "name": "ng-describe",
-  "main": "ng-describe.js",
-  "version": "1.1.1",
+  "main": "dist/ng-describe.js",
+  "version": "0.0.0",
   "license": "MIT",
   "ignore": [
     "**/.*",
@@ -17,10 +17,14 @@
   "keywords": [
     "angular",
     "angularjs",
-    "testing",
-    "unit",
     "bdd",
-    "describe"
+    "describe",
+    "helper",
+    "ng",
+    "simple",
+    "test",
+    "testing",
+    "unit"
   ],
   "homepage": "https://github.com/kensho/ng-describe",
   "authors": [

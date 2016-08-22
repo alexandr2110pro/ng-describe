@@ -1,6 +1,17 @@
 (function setupNgDescribe(root) {
-  // check - kensho/check-more-types
-  // la - bahmutov/lazy-ass
+  var check = root.check;
+
+  // probably loaded under Node
+
+  if (typeof la === 'undefined') {
+    // lazy assertions from bahmutov/lazy-ass
+    la = require('lazy-ass');
+  }
+  if (typeof check === 'undefined') {
+    // check predicates from kensho/check-more-types
+    /* global require */
+    check = require('check-more-types');
+  }
   la(check.object(root), 'missing root');
 
   var _defaults = {
@@ -25,8 +36,10 @@
 
   function defaults(opts) {
     opts = opts || {};
-    return angular.extend(angular.copy(_defaults), opts);
+    return root.angular.extend(root.angular.copy(_defaults), opts);
   }
+
+  la(check.fn(check.or), 'cannot find check.or method', check);
 
   var ngDescribeSchema = {
     // primary options
@@ -56,8 +69,12 @@
     });
   }
 
+  function isDefined(a) {
+    return typeof a !== 'undefined';
+  }
+
   function clone(a) {
-    return JSON.parse(JSON.stringify(a));
+    return isDefined(a) ? JSON.parse(JSON.stringify(a)) : undefined;
   }
 
   function methodNames(reference) {
@@ -133,31 +150,50 @@
     return options;
   }
 
-  function decideSuiteFunction(options) {
-    var suiteFn = root.describe;
-    if (options.only) {
-      // run only this describe block using Jasmine or Mocha
-      // http://bahmutov.calepin.co/focus-on-specific-jasmine-suite-in-karma.html
-      // Jasmine 2.x vs 1.x syntax - fdescribe vs ddescribe
-      suiteFn = root.fdescribe || root.ddescribe || root.describe.only;
+  // returns original BDD callbacks provided by the testing framework
+  // except for the main 'describe' function
+  // describe can be replaced with skip / only version
+  function bddCallbacks(options) {
+    // Allow finding test framework OUTSIDE the angular environment
+    // useful when loading angular + ngDescribe in synthetic Node browser
+    // attached to window object,
+    // but running Mocha / Jasmine in Node (global) context
+    var globalOrWindow = options.root || root;
+    function decideSuiteFunction(options) {
+      var suiteFn = globalOrWindow.describe;
+      if (options.only) {
+        // run only this describe block using Jasmine or Mocha
+        // http://bahmutov.calepin.co/focus-on-specific-jasmine-suite-in-karma.html
+        // Jasmine 2.x vs 1.x syntax - fdescribe vs ddescribe
+        suiteFn = globalOrWindow.fdescribe || globalOrWindow.ddescribe || globalOrWindow.describe.only;
+      }
+      if (options.helpful) {
+        suiteFn = globalOrWindow.helpDescribe;
+      }
+      if (options.skip) {
+        la(!options.only, 'skip and only are exclusive options', options);
+        suiteFn = globalOrWindow.xdescribe || globalOrWindow.describe.skip;
+      }
+      return suiteFn;
     }
-    if (options.helpful) {
-      suiteFn = root.helpDescribe;
-    }
-    if (options.skip) {
-      la(!options.only, 'skip and only are exclusive options', options);
-      suiteFn = root.xdescribe || root.describe.skip;
-    }
-    return suiteFn;
+
+    return {
+      describe: decideSuiteFunction(options),
+      beforeEach: globalOrWindow.beforeEach,
+      afterEach: globalOrWindow.afterEach,
+      it: globalOrWindow.it
+    };
   }
 
   function decideLogFunction(options) {
-    return options.verbose ? angular.bind(console, console.log) : angular.noop;
+    return options.verbose ? root.angular.bind(console, console.log) : root.angular.noop;
   }
 
   function ngDescribe(options) {
     la(check.object(options), 'expected options object, see docs', options);
-    la(check.defined(angular), 'missing angular');
+    la(check.defined(root.angular), 'missing angular');
+
+    var explicitInjectCopy = clone(options.inject);
 
     options = copyAliases(options);
     options = defaults(options);
@@ -165,14 +201,26 @@
     options = collectInjects(options);
     options = ensureUnique(options);
 
+    function hasImplicitInjects() {
+      if (explicitInjectCopy) {
+        return false;
+      }
+      if (options.exposeApi) {
+        return false;
+      }
+      var depsTests = /^function\s+[a-zA-Z0-9]*\s*\((deps|dependencies)\)/;
+      var testCode = options.tests.toString();
+      return !depsTests.test(testCode);
+    }
+
     var log = decideLogFunction(options);
     la(check.fn(log), 'could not decide on log function', options);
 
-    var isValidNgDescribe = angular.bind(null, check.schema, ngDescribeSchema);
+    var isValidNgDescribe = root.angular.bind(null, check.schema, ngDescribeSchema);
     la(isValidNgDescribe(options), 'invalid input options', options);
 
-    var suiteFn = decideSuiteFunction(options);
-    la(check.fn(suiteFn), 'missing describe function', options);
+    var bdd = bddCallbacks(options);
+    la(check.fn(bdd.describe), 'missing describe function in', bdd, 'options', options);
 
     // list of services to inject into mock functions
     var mockInjects = [];
@@ -184,6 +232,9 @@
     function ngSpecs() {
 
       var dependencies = {};
+      // individual functions that should run after each unit test
+      // to clean up everything setup.
+      var cleanupCallbacks = [];
 
       function partiallInjectMethod(owner, mockName, fn, $injector) {
         la(check.unemptyString(mockName), 'expected mock name', mockName);
@@ -220,20 +271,27 @@
         return reference;
       }
 
-      root.beforeEach(function mockModules() {
+      bdd.beforeEach(function checkEnvironment() {
+        la(check.object(root.angular), 'angular is undefined');
+        la(check.has(root.angular, 'mock'), 'angular.mock is undefined');
+        la(check.fn(root.angular.mock.module),
+          'missing angular mock module fn, is running inside jasmine or mocha?');
+      });
+
+      bdd.beforeEach(function mockModules() {
         log('ngDescribe', options.name);
         log('loading modules', options.modules);
 
         options.modules.forEach(function loadAngularModules(moduleName) {
           if (options.configs[moduleName]) {
-            var m = angular.module(moduleName);
+            var m = root.angular.module(moduleName);
             m.config([moduleName + 'Provider', function (provider) {
               var cloned = clone(options.configs[moduleName]);
               log('setting config', moduleName + 'Provider to', cloned);
               provider.set(cloned);
             }]);
           } else {
-            angular.mock.module(moduleName, function ($provide, $injector) {
+            root.angular.mock.module(moduleName, function ($provide, $injector) {
               var mocks = options.mocks[moduleName];
               if (mocks) {
                 log('mocking', Object.keys(mocks));
@@ -257,14 +315,28 @@
       });
 
       function injectDependencies($injector) {
+        var implicit = hasImplicitInjects();
+        if (implicit) {
+          options.inject = $injector.annotate(options.tests);
+          log('implicit injects', options.inject);
+        }
+
+        if(options.inject.indexOf('$rootScope') === -1) {
+          options.inject.push('$rootScope');
+        }
+
         log('injecting', options.inject);
 
-        options.inject.forEach(function (dependencyName) {
+        options.inject.forEach(function (dependencyName, k) {
           var injectedUnderName = aliasedDependencies[dependencyName] || dependencyName;
           la(check.unemptyString(injectedUnderName),
             'could not rename dependency', dependencyName);
-          dependencies[injectedUnderName] =
-            dependencies[dependencyName] = $injector.get(dependencyName);
+          var value = $injector.get(dependencyName);
+          if (implicit) {
+            dependencies[String(k)] = value;
+          } else {
+            dependencies[injectedUnderName] = dependencies[dependencyName] = value;
+          }
         });
 
         mockInjects = uniq(mockInjects);
@@ -276,9 +348,15 @@
         });
       }
 
-      function setupControllers() {
-        log('setting up controllers', options.controllers);
-        options.controllers.forEach(function (controllerName) {
+      function setupControllers(controllerNames) {
+        if (check.unemptyString(controllerNames)) {
+          controllerNames = [controllerNames];
+        }
+        log('setting up controllers', controllerNames);
+        la(check.arrayOfStrings(controllerNames),
+          'expected list of controller names', controllerNames);
+
+        controllerNames.forEach(function (controllerName) {
           la(check.fn(dependencies.$controller), 'need $controller service', dependencies);
           la(check.object(dependencies.$rootScope), 'need $rootScope service', dependencies);
           var scope = dependencies.$rootScope.$new();
@@ -286,6 +364,13 @@
             $scope: scope
           });
           dependencies[controllerName] = scope;
+
+          // need to clean up anything created when setupControllers was called
+          bdd.afterEach(function () {
+            log('deleting controller name', controllerName, 'from dependencies',
+              Object.keys(dependencies));
+            delete dependencies[controllerName];
+          });
         });
       }
 
@@ -330,6 +415,14 @@
           if (isResponsePair(value)) {
             return dependencies.http.when(method, url).respond(value[0], value[1]);
           }
+
+          if (Array.isArray(value) && value.length >= 3) {
+            return dependencies.http.when(method, url).respond(function (method, url, data, headers) {
+              var compiledHeaders = value[2] ? root.angular.extend(headers, value[2]) : headers;
+
+              return [value[0], value[1], compiledHeaders, value[3] || ''];
+            });
+          }
           return dependencies.http.when(method, url).respond(200, value);
         });
       }
@@ -357,44 +450,43 @@
           .forEach(setupMethodHttpResponses);
       }
 
-      function setupDigestcycleShortcut() {
-        if (dependencies.$httpBackend ||
-          dependencies.http ||
-          dependencies.$rootScope) {
-          dependencies.step = function step() {
-            if (dependencies.http && check.fn(dependencies.http.flush)) {
-              dependencies.http.flush();
-            }
-            if (dependencies.$rootScope) {
-              dependencies.$rootScope.$digest();
-            }
-          };
-        } else {
-          dependencies.step = null;
-        }
+      function setupDigestCycleShortcut() {
+        dependencies.step = function step() {
+          if (dependencies.http && check.fn(dependencies.http.flush)) {
+            dependencies.http.flush();
+          }
+          if (dependencies.$rootScope) {
+            dependencies.$rootScope.$digest();
+          }
+          if (dependencies.$timeout) {
+            dependencies.$timeout.flush();
+          }
+        };
       }
 
       // treat http option a little differently
-      root.beforeEach(function loadDynamicHttp() {
+      function loadDynamicHttp() {
         if (check.fn(options.http)) {
           options.http = options.http();
-          console.log('http function returned', options.http);
         }
-      });
+      }
 
-      root.beforeEach(angular.mock.inject(injectDependencies));
-      root.beforeEach(setupDigestcycleShortcut);
-      root.beforeEach(setupControllers);
-      root.beforeEach(setupHttpResponses);
+      bdd.beforeEach(loadDynamicHttp);
+      bdd.beforeEach(function injectDeps() {
+        // defer using angular.mock
+        root.angular.mock.inject(injectDependencies);
+      });
+      bdd.beforeEach(setupDigestCycleShortcut);
+      bdd.beforeEach(setupHttpResponses);
 
       function setupElement(elementHtml) {
         la(check.fn(dependencies.$compile), 'missing $compile', dependencies);
 
         var scope = dependencies.$rootScope.$new();
-        angular.extend(scope, angular.copy(options.parentScope));
+        root.angular.extend(scope, root.angular.copy(options.parentScope));
         log('created element scope with values', options.parentScope);
 
-        var element = angular.element(elementHtml);
+        var element = root.angular.element(elementHtml);
         var compiled = dependencies.$compile(element);
         compiled(scope);
         dependencies.$rootScope.$digest();
@@ -403,47 +495,105 @@
         dependencies.parentScope = scope;
       }
 
+      function runTestCallbackExposeArguments() {
+        var testsCode = options.tests.toString();
+        var returnArguments = testsCode.replace(/\}\s*$/, '\nreturn arguments;\n}');
+        /* jshint -W061 */
+        var testCallback = eval('(' + returnArguments + ')');
+        dependencies = testCallback.apply(null, new Array(testCallback.length));
+        la(check.object(dependencies), 'have not received arguments');
+      }
+
       function exposeApi() {
         return {
-          setupElement: setupElement
+          setupElement: setupElement,
+          setupControllers: setupControllers
         };
       }
 
       var toExpose = options.exposeApi ? exposeApi() : undefined;
-      options.tests(dependencies, toExpose);
+
+      // call the user-supplied test function to register the actual unit tests
+      if (hasImplicitInjects()) {
+        runTestCallbackExposeArguments();
+      } else {
+        options.tests(dependencies, toExpose);
+      }
 
       // Element setup comes after tests setup by default so that any beforeEach clauses
       // within the tests occur before the element is compiled, i.e. $httpBackend setup.
       if (check.unemptyString(options.element)) {
         log('setting up element', options.element);
-        root.beforeEach(function () {
+        bdd.beforeEach(function () {
           setupElement(options.element);
         });
-        root.afterEach(function () {
+        cleanupCallbacks.push(function cleanupElement() {
+          log('deleting created element');
           delete dependencies.element;
         });
       }
 
-      function deleteDependencies() {
-        options.inject.forEach(function (dependencyName) {
-          la(check.unemptyString(dependencyName), 'missing dependency name', dependencyName);
-          var name = aliasedDependencies[dependencyName] || dependencyName;
-          la(check.has(dependencies, name),
-            'cannot find injected dependency', name, 'for', dependencyName);
-          la(check.has(dependencies, dependencyName),
-            'cannot find injected dependency', dependencyName);
-          delete dependencies[name];
-          delete dependencies[dependencyName];
+      if (check.has(options, 'controllers') &&
+        check.unempty(options.controllers)) {
+
+        bdd.beforeEach(function () {
+          setupControllers(options.controllers);
         });
       }
-      root.afterEach(deleteDependencies);
+
+      function deleteDependencies() {
+        la(check.object(dependencies), 'missing dependencies object', dependencies);
+
+        log('deleting dependencies injected by ngDescribe from', Object.keys(dependencies));
+        log('before cleaning up, these names were injected', options.inject);
+
+        var implicit = hasImplicitInjects();
+        if (implicit) {
+          log('removing implicit dependencies');
+          options.inject.forEach(function deleteImplicitDependency(name, k) {
+            delete dependencies[String(k)];
+          });
+          return;
+        }
+
+        options.inject.forEach(function deleteInjectedDependency(dependencyName, k) {
+          la(check.unemptyString(dependencyName), 'missing dependency name', dependencyName);
+          var name = aliasedDependencies[dependencyName] || dependencyName;
+          log('deleting injected name', dependencyName, 'alias', name, 'index', k);
+
+          la(check.has(dependencies, name),
+            'cannot find injected dependency', name, '(or alias)', dependencyName,
+            'in', dependencies);
+          la(check.has(dependencies, dependencyName),
+            'cannot find injected dependency', dependencyName);
+
+          log('deleting property', name, 'from dependencies', Object.keys(dependencies));
+          delete dependencies[name];
+          delete dependencies[dependencyName];
+          log('remaining dependencies object', Object.keys(dependencies));
+        });
+      }
+      cleanupCallbacks.push(deleteDependencies);
+
+      function cleanUp(callbacks) {
+        la(check.array(callbacks), 'expected list of callbacks', callbacks);
+        log('inside cleanup afterEach', callbacks.length, 'callbacks');
+
+        callbacks.forEach(function (fn) {
+          la(check.fn(fn), 'expected function to cleanup, got', fn);
+          bdd.afterEach(fn);
+        });
+      }
+
+      log('cleanupCallbacks', cleanupCallbacks.length);
+      cleanUp(cleanupCallbacks);
     }
 
-    suiteFn(options.name, ngSpecs);
+    bdd.describe(options.name, ngSpecs);
 
     return ngDescribe;
   }
 
   root.ngDescribe = ngDescribe;
 
-}(this));
+}(typeof window === 'object' ? window : this));

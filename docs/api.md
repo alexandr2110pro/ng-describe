@@ -38,7 +38,7 @@ ngDescribe({
 });
 ```
 
-You if have a single module to inject, you can just use a string name without Array notation
+If you have a single module to inject, you can just use a string name without Array notation
 
 ```js
 ngDescribe({
@@ -68,7 +68,7 @@ ngDescribe({
 });
 ```
 
-**tests** - callback function that contains actual specs. This of this as `describe` equivalent with
+**tests** - callback function that contains actual specs. Think of this as equivalent to `describe` with
 all necessary Angular dependencies taken care of.
 
 ```js
@@ -89,7 +89,31 @@ ngDescribe({
 });
 ```
 
-**mocks** - top level mocks to be substituted into the tests. 
+**Dependencies injection shortcut**
+
+You can list the dependencies to be injected directly in the test callback.
+
+```js
+angular.module('shortcut', [])
+  .constant('foo', 'bar');
+ngDescribe({
+  module: 'shortcut',
+  tests: function (foo) {
+    it('has constant', function () {
+      console.assert(foo === 'bar');
+    });
+  }
+});
+```
+
+You can inject multiple providers, including built-in services. If the test callback argument
+is named `deps` or `dependencies` it will be assumed that you do NOT use the shortcut.
+
+The shortcut was implemented using [changing named parameters trick][trick].
+
+[trick]: http://glebbahmutov.com/blog/changing-the-function-arguments-trick/
+
+**mocks** - top level mocks to be substituted into the tests.
 The mocks override *any* injected dependencies among modules.
 
 ```js
@@ -111,7 +135,7 @@ ngDescribe({
 
 For more information see examples below.
 
-**controllers** - list of controllers by name that be injected. Each controller
+**controllers** - list of controllers by name that should be injected. Each controller
 is created with a new `$rootScope` instance.
 
 **NOTE: For each created controller, its SCOPE instance will be in the dependencies object.**
@@ -142,7 +166,7 @@ ngDescribe({
 });
 ```
 
-The compiled `angular.element` will be injected into dependencies object under `element` property.
+The compiled `angular.element` will be injected into the dependencies object under `element` property.
 See examples below for more information. The compilation will create a new scope object too.
 
 **parentScope** - when creating HTML fragment, copies properties from this object into the
@@ -168,8 +192,8 @@ ngDescribe({
 See "2 way binding" example below.
 
 **configs** - object with modules that have provider that can be used to inject
-run time settings. 
-See *Update 1* in 
+run time settings.
+See *Update 1* in
 [Inject valid constants into Angular](http://glebbahmutov.com/blog/inject-valid-constants-into-angular/)
 blog post and examples below.
 
@@ -177,7 +201,7 @@ blog post and examples below.
 
 **verbose** - flag to print debug messages during execution
 
-**only** - flag to run this set of tests and skip the rest. Equivalent to 
+**only** - flag to run this set of tests and skip the rest. Equivalent to
 [ddescribe or describe.only](http://glebbahmutov.com/blog/focus-on-karma-test/).
 
 ```js
@@ -190,7 +214,17 @@ ngDescribe({
 **skip** - flag to skip this group of specs. Equivalent to `xdescribe` or `describe.skip`.
 Could be a string message explaining the reason for skipping the spec.
 
-**exposeApi** - instead of creating element right away, expose element factory so that you can create
+**exposeApi** - expose low-level ngDescribe methods
+
+The `tests` callback will get the second argument, which is an object with the following methods
+
+    {
+      setupElement: function (elementHtml),
+      setupControllers: function (controllerNames)
+    }
+
+You can use `setupElement` to control when to create the element.
+For example, instead of creating element right away, expose element factory so that you can create
 an element *after* running a `beforeEach` block. Useful for setting up mock backend before creating
 an element.
 
@@ -215,10 +249,48 @@ ngDescribe({
 });
 ```
 
-**http** - shortcut for specifying mock HTTP responses, 
+See the spec in [test/expose-spec.js](test/expose-spec.js)
+
+Or you can use `setupControllers` to create controller objects AFTER setting up your spies.
+
+```js
+angular.module('BroadcastController', [])
+  .controller('broadcastController', function broadcastController($rootScope) {
+    $rootScope.$broadcast('foo');
+  });
+```
+
+We need to listen for the `foo` broadcast inside a unit test before creating the controller.
+If we let `ngDescribe` create the "broadcastController" it will be too late. Instead we
+can tell the `ngDescribe` to expose the low-level api and then we create the controllers when
+we are ready
+
+```js
+ngDescribe({
+  name: 'spy on controller init',
+  modules: 'BroadcastController',
+  inject: '$rootScope',
+  exposeApi: true,
+  tests: function (deps, describeApi) {
+    it('can catch the broadcast in controller init', function (done) {
+      var heardFoo;
+      deps.$rootScope.$on('foo', function () {
+        heardFoo = true;
+        done();
+      });
+      describeApi.setupControllers('broadcastController');
+    });
+  }
+});
+```
+
+See the spec in [test/controller-init-spec.js](test/controller-init-spec.js)
+
+**http** - shortcut for specifying mock HTTP responses,
 built on top of [$httpBackend](https://docs.angularjs.org/api/ngMock/service/$httpBackend).
 Each GET request will be mapped to `$httpBackend.whenGET` for example. You can provide
-data, response code + data pair or custom function to return something using custom logic.
+data, response code + data pair, response code + data + headers and optionally statusText
+or custom function to return something using custom logic.
 If you use `http` property, then the injected dependencies will have `http` object that
 you can flush (it is really `$httpBackend` object).
 
@@ -232,8 +304,9 @@ ngDescribe({
       '/my/smart/url': function (method, url, data, headers) {
         return [500, 'something is wrong'];
       } // status 500, data "something is wrong"
-    }, 
+    },
     post: {
+      '/my/url': '/my/url': [201, {message: 'ok'}, {Location: '/new/url'}, 'this is the new response'], // status data, headers and statusText
       // same format as GET
     }
   },
@@ -241,18 +314,19 @@ ngDescribe({
     it('responds', function (done) {
       deps.$http.get('/my/other/url')
         .then(function (response) {
+          // expect
           // response.status = 202
           // response.data = 42
           done();
         });
-      http.flush();
+      deps.http.flush();
     });
   }
 });
 ```
 All standard methods should be supported (`get`, `head`, `post`, `put`, `delete`, `jsonp` and `patch`).
 
-Each of the methods can return a function that returns an configuration object, see [mock http](#mock-http)
+Each of the methods can return a function that returns an configuration object, see [mock http](#mock-http).
 
 **step** - shortcut for running the digest cycle and mock http flush
 
@@ -280,3 +354,38 @@ tests: function (deps) {
   });
 }
 ```
+
+Also flushed the `$timeout` service
+
+```js
+ngDescribe({
+  inject: '$timeout',
+  tests: function (deps) {
+    it(function () {
+      deps.$timeout(...)
+      deps.step();
+      // same as deps.$timeout.flush()
+    })
+  }
+})
+```
+
+**root** - alternative context for BDD callbacks
+
+Imagine we are loading Angular and ngDescribe in a synthetic browser environment (like 
+[jsdom](https://www.npmjs.com/package/jsdom)). ngDescribe attaches itself to synthetic `window`
+object, but the test framework callbacks are attached to `global` object, not `window`.
+By passing an alternative object, we allow ngDescribe to discover `it`, `beforeEach`, etc.
+
+```js
+// load ngDescribe in jsdom under Node
+window.ngDescribe({
+  root: global,
+  tests: function (deps) {
+    ...
+  }
+})
+```
+
+See repo [ng-describe-jsdom](https://gitlab.com/bahmutov/ng-describe-jsdom) for actual
+example that tests Angular without a browser, only a synthetic emulation.

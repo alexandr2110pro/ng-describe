@@ -148,7 +148,7 @@ ngDescribe({
   http: function constructMockApi() {
     return {
       get: function () {
-        return { '/my/url': 42 };
+        return {'/my/url': 42};
       },
       post: {
         '/my/other/url': [200, 'nice']
@@ -176,7 +176,7 @@ ngDescribe({
 ngDescribe({
   name: 'http mock backend example using $httpBackend',
   modules: ['apiGetCaller'],
-  inject: ['getIt', '$httpBackend'],
+  inject: ['getIt', '$httpBackend', '$rootScope'],
   only: false,
   tests: function (deps) {
     beforeEach(function () {
@@ -194,6 +194,9 @@ ngDescribe({
     });
 
     afterEach(function () {
+      la(deps.$rootScope, 'has root scope');
+      // why is this an issue only in Jasmine?
+      la(!deps.$rootScope.$$phase, 'not in digest cycle', deps.$rootScope.$$phase);
       deps.$httpBackend.verifyNoOutstandingRequest();
       deps.$httpBackend.verifyNoOutstandingExpectation();
     });

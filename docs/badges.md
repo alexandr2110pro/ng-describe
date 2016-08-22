@@ -2,17 +2,22 @@
 [![Quality][quality-badge] ][quality-url]
 
 [![Build status][ng-describe-ci-image] ][ng-describe-ci-url]
-[![Coverage Status][ng-describe-coverage-image] ][ng-describe-coverage-url]
+[![manpm](https://img.shields.io/badge/manpm-%E2%9C%93-3399ff.svg)](https://github.com/bahmutov/manpm)
 [![Codacy Badge][ng-describe-codacy-image] ][ng-describe-codacy-url]
+[![semantic-release][semantic-image] ][semantic-url]
+
+[![Coverage Status][ng-describe-coverage-image] ][ng-describe-coverage-url]
 [![dependencies][ng-describe-dependencies-image] ][ng-describe-dependencies-url]
 [![devdependencies][ng-describe-devdependencies-image] ][ng-describe-devdependencies-url]
 
-Tested against angular v1.2, v1.3 and v1.4
+Tested against angular v1.2, v1.3 and v1.4,
+dependent projects tested using [dont-break][dont-break] - [![Circle CI] [circle-icon] ][circle-url].
 
-Dependent projects tested using [dont-break][dont-break] - [![Circle CI] [circle-icon] ][circle-url]
+Read [Unit testing AngularJS using ng-describe](http://glebbahmutov.com/blog/1-2-3-tested/) tutorial,
+look through [Unit testing](http://slides.com/bahmutov/ng-describe) slides.
 
 Join [Kensho](https://kensho.com/#/careers) and change the way financial industry analyzes information.
-We love the open source and use the bleeding edge technology stack.
+We love open source and use the bleeding edge technology stack.
 
 [ng-describe-icon]: https://nodei.co/npm/ng-describe.png?downloads=true
 [ng-describe-url]: https://npmjs.org/package/ng-describe
@@ -26,6 +31,8 @@ We love the open source and use the bleeding edge technology stack.
 [ng-describe-devdependencies-url]: https://david-dm.org/kensho/ng-describe#info=devDependencies
 [ng-describe-codacy-image]: https://www.codacy.com/project/badge/25cb5d1410c7497cb057d887d1f3ea23
 [ng-describe-codacy-url]: https://www.codacy.com/public/kensho/ng-describe.git
+[semantic-image]: https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg
+[semantic-url]: https://github.com/semantic-release/semantic-release
 
 [quality-badge]: http://npm.packagequality.com/badge/ng-describe.png
 [quality-url]: http://packagequality.com/#?package=ng-describe
